@@ -27,12 +27,18 @@ type Hit struct {
 // ArgFunc should generate command line arguments to be passed
 type ArgFunc func() []string
 
+type FuzzChan struct {
+	Result chan Hit
+	Status chan *syscall.WaitStatus
+	Quit   chan struct{}
+}
+
 // CommFunc will communicate with the program
 // CommFunc has final say about when to make and send on a Hit
 // send hit on result
 // get termination result on status
 // quit early if quit closes
-type CommFunc func(stdin io.WriteCloser, stdout, stderr io.ReadCloser, result chan Hit, status chan *syscall.WaitStatus, quit chan struct{}, args []string)
+type CommFunc func(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc FuzzChan, args []string)
 
 // I donno if I should have quit be returned or passed in?
 
@@ -110,7 +116,7 @@ func fuzzWorker(ctx Context, path string, args interface{}, comm CommFunc, resul
 
 		retchan := make(chan *syscall.WaitStatus, 1)
 
-		go comm(stdin, stdout, stderr, result, retchan, quit, strargs) // start the fuzzer function
+		go comm(stdin, stdout, stderr, FuzzChan{result, retchan, quit}, strargs) // start the fuzzer function
 
 		err = cmd.Start()
 		if err != nil {

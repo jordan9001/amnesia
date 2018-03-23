@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -16,7 +15,7 @@ var counter_mux *sync.Mutex = &sync.Mutex{}
 
 var charset []byte = []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!.,?")
 
-func trySeq(stdin io.WriteCloser, stdout, stderr io.ReadCloser, result chan amnesia.Hit, status chan *syscall.WaitStatus, quit chan struct{}, args []string) {
+func trySeq(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc amnesia.FuzzChan, args []string) {
 	// basic send brute force sequence of readable-characters
 	counter_mux.Lock()
 	c := counter
@@ -45,13 +44,13 @@ func trySeq(stdin io.WriteCloser, stdout, stderr io.ReadCloser, result chan amne
 			Input:  string(in),
 			Output: s,
 		}
-		result <- h
+		fc.Result <- h
 	}
 }
 
 const max_size int = 8
 
-func tryRand(stdin io.WriteCloser, stdout, stderr io.ReadCloser, result chan amnesia.Hit, status chan *syscall.WaitStatus, quit chan struct{}, args []string) {
+func tryRand(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc amnesia.FuzzChan, args []string) {
 	// basic send of random readablecharacters
 	size := rand.Intn(max_size-1) + 1
 	in := make([]byte, size)
@@ -71,7 +70,7 @@ func tryRand(stdin io.WriteCloser, stdout, stderr io.ReadCloser, result chan amn
 			Input:  string(in),
 			Output: s,
 		}
-		result <- h
+		fc.Result <- h
 	}
 }
 
