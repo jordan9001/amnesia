@@ -8,7 +8,6 @@ import (
 /*
 - Reverse RegExe for random input generation
 - Brute force sequential generation with character set
-- Input mutator with variability amount
 - Input Generator with disallowed characters
 */
 
