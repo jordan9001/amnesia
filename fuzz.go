@@ -25,6 +25,7 @@ type Hit struct {
 }
 
 // ArgFunc should generate command line arguments to be passed
+//TODO ArgFunc should also be able to fuzz Env Vars
 type ArgFunc func() []string
 
 type FuzzChan struct {
