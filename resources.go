@@ -1,10 +1,10 @@
 package amnesia
 
-// Thanks to Minimaxir for curating the BLNS
+// Thanks to Minimaxir for curating the BNSL
 
-var BLNS [][]byte // will be initialized from BLNS_b64 in mutator.go
+var BNSL [][]byte // will be initialized from BLNS_b64 in mutator.go
 
-var BLNS_b64 []string = []string{
+var BNSL_b64 []string = []string{
 	"",
 	"dW5kZWZpbmVk",
 	"dW5kZWY=",

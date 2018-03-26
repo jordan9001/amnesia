@@ -1,12 +1,13 @@
 package amnesia
 
 import (
-	"encodeing/base64"
+	"encoding/base64"
+	"log"
 	"math/rand"
 )
 
 type HEntry struct {
-	prob Int
+	prob int
 	f    func([]byte) []byte
 }
 
@@ -26,15 +27,15 @@ var hTableTotal int
 func init() {
 	// initialize hTableTotal
 	setHTableTotal()
-	// initialize BLNS from BLNS_b64
+	// initialize BNSL from BLNS_b64
 
-	BLNS = make([][]byte, len(BLNS_b64))
-	for i, v := range BLNS_b64 {
+	BNSL = make([][]byte, len(BNSL_b64))
+	for i, v := range BNSL_b64 {
 		bad, err := base64.StdEncoding.DecodeString(v)
 		if err != nil {
 			log.Fatalf("Error while decoding BLNS_b64 entry %d\n", i)
 		}
-		BLSN[i] = bad
+		BNSL[i] = bad
 	}
 }
 
@@ -54,6 +55,10 @@ func SetHeruistics(hvals []HEntry) {
 
 // For mutating known input to reveal bad stuff
 func Mutate(src string, level int) string {
+
+	if len(src) == 0 {
+		return src
+	}
 
 	s := []byte(src)
 
@@ -76,18 +81,19 @@ func Mutate(src string, level int) string {
 // - find ascii numbers and mess them up
 
 func bad_add(in []byte) []byte {
-	bad := BLNS[rand.Intn(len(BLNS))]
+	bad := BNSL[rand.Intn(len(BNSL))]
 	sz := len(bad)
 	pos := rand.Intn(len(in) + 1)
 
 	// insert
-	out := append(in, make([]byte, sz))
+	out := append(in, make([]byte, sz)...)
 	copy(out[pos+sz:], in[pos:])
 	copy(out[pos:], bad)
+	return in
 }
 
 func bad_replace(in []byte) []byte {
-	bad := BLNS[rand.Intn(len(BLNS))]
+	bad := BNSL[rand.Intn(len(BNSL))]
 	if len(in) < len(bad) {
 		// silent fail
 		return in
@@ -102,7 +108,7 @@ func bad_replace(in []byte) []byte {
 
 func rearrange_random(in []byte) []byte {
 	pos := rand.Intn(len(in))
-	sz := rand.Intn(len(in)-pos-1) + 1
+	sz := rand.Intn(len(in)-pos) + 1
 
 	dst := rand.Intn(len(in) + 1 - sz)
 	tblock := make([]byte, sz)
@@ -147,7 +153,7 @@ func repeat_add(in []byte) []byte {
 	pos := rand.Intn(len(in) + 1)
 
 	// insert
-	out := append(in, make([]byte, size))
+	out := append(in, make([]byte, size)...)
 	copy(out[pos+size:], in[pos:])
 	copy(out[pos:], in[start:end])
 	return out
@@ -156,7 +162,7 @@ func repeat_add(in []byte) []byte {
 func repeat_replace(in []byte) []byte {
 	// take a random selection
 	pos := rand.Intn(len(in))
-	sz := rand.Intn(len(in)-pos-1) + 1
+	sz := rand.Intn(len(in) - pos)
 
 	dst := rand.Intn(len(in) + 1 - sz)
 
