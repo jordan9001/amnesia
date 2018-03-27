@@ -34,6 +34,13 @@ type FuzzChan struct {
 	Quit   chan struct{}
 }
 
+//TODO change CommFunc to use a slice of these instead of stdin, stdout, stderr
+// That way we can have other file descriptors be replaced by our payload
+type ProdFD struct {
+	FD int
+	Pipe io.Closer // needs to be type asserted to a io.WriteCloser or io.ReadCloser
+}
+
 // CommFunc will communicate with the program
 // CommFunc has final say about when to make and send on a Hit
 // send hit on result
