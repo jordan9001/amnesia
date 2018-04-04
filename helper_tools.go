@@ -7,8 +7,6 @@ import (
 // Helper function ideas
 /*
 - Reverse RegExe for random input generation
-- Brute force sequential generation with character set
-- Input Generator with disallowed characters
 */
 
 func ReportFaults(in string, fc FuzzChan) bool {
