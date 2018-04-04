@@ -119,9 +119,9 @@ HANDLE_MEM_FUZZ_FD:
 	
 	; read (fd, buf, count)
 	mov rdi, rax	; fd
-	sub rsp, 0x10
+	sub rsp, FUZZ_HEADER_SZ
 	mov rsi, rsp	; buf
-	mov rdx, 0x10	; count
+	mov rdx, FUZZ_HEADER_SZ	; count
 	xor rax, rax	; sys_read
 	syscall
 
@@ -129,8 +129,22 @@ HANDLE_MEM_FUZZ_FD:
 	js FD_ERROR
 
 	pop rsi		; buf
+	pop rax		; type
+	; if rax is 1, this is a esp offset
+	test rax, rax
+	jz MEM_HARD_ADDR
+	
+	; use rsi as rsp offset from where the hook was inserted
+	lea rsi, [rsi + rsp + 0x70] ; rsp offset is the 13 saved things, and the count
+	
+MEM_HARD_ADDR:
 	pop rdx		; count
 	xor rax, rax	; sys_read
+	syscall
+
+	; close this one
+	mov rax, 3	; sys_close
+	; rdi should already be the fd
 	syscall
 
 HANDLED_PIPE_STRUCT:
@@ -203,7 +217,9 @@ VAR_START:
 	; uint32   fd
 	; char[19] filename
 
+	FUZZ_HEADER_SZ equ 0x18
 	; memory fuzz msg:
 	; uint64 addr
+	; uint64 type
 	; uint64 size
 	; char[] buf
