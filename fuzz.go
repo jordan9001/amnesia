@@ -36,8 +36,10 @@ type FuzzChan struct {
 
 //TODO change CommFunc to use a slice of these instead of stdin, stdout, stderr
 // That way we can have other file descriptors be replaced by our payload
-type ProdFD struct {
-	FD int
+type ProgFD struct {
+	FD   int
+	Type uint8
+	File string    // if this is not nil, then we have a named pipe file to delete
 	Pipe io.Closer // needs to be type asserted to a io.WriteCloser or io.ReadCloser
 }
 
