@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-type Context struct {
-	WorkerCount int
-	BufferSize  int
-	Timeout     time.Duration
-}
-
 // used for reporting a crash, find, etc
 // should include all necessary info to repeat the crash
 type Hit struct {
@@ -34,11 +28,9 @@ type FuzzChan struct {
 	Quit   chan struct{}
 }
 
-//TODO change CommFunc to use a slice of these instead of stdin, stdout, stderr
-// That way we can have other file descriptors be replaced by our payload
 type ProgFD struct {
 	FD   int
-	Type uint8
+	Type uint8     // Could be a buff fuzz thing, a reader, or a writer
 	File string    // if this is not nil, then we have a named pipe file to delete
 	Pipe io.Closer // needs to be type asserted to a io.WriteCloser or io.ReadCloser
 }
@@ -48,19 +40,17 @@ type ProgFD struct {
 // send hit on result
 // get termination result on status
 // quit early if quit closes
-type CommFunc func(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc FuzzChan, args []string)
+type CommFunc func(comset []ProgFD, fc FuzzChan, args []string)
 
-// I donno if I should have quit be returned or passed in?
-
-func FuzzArgs(ctx Context, path string, args ArgFunc, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
+func FuzzArgs(ctx Context, args ArgFunc, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
 	return fuzz(ctx, path, args, comm, quit)
 }
 
-func Fuzz(ctx Context, path string, args []string, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
+func Fuzz(ctx Context, args []string, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
 	return fuzz(ctx, path, args, comm, quit)
 }
 
-func fuzz(ctx Context, path string, args interface{}, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
+func fuzz(ctx Context, args interface{}, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
 	// This function starts all the workers
 
 	// check for valid arguments
@@ -84,13 +74,13 @@ func fuzz(ctx Context, path string, args interface{}, comm CommFunc, quit chan s
 	results = make(chan Hit, ctx.BufferSize)
 
 	for i := 0; i < ctx.WorkerCount; i++ {
-		go fuzzWorker(ctx, path, args, comm, results, quit)
+		go fuzzWorker(ctx, args, comm, results, quit)
 	}
 
 	return results, nil
 }
 
-func fuzzWorker(ctx Context, path string, args interface{}, comm CommFunc, result chan Hit, quit chan struct{}) {
+func fuzzWorker(ctx Context, args interface{}, comm CommFunc, result chan Hit, quit chan struct{}) {
 	var loop bool = true
 	for loop {
 		// this function loops running a command, and sends back any hits
@@ -125,6 +115,8 @@ func fuzzWorker(ctx Context, path string, args interface{}, comm CommFunc, resul
 		}
 
 		retchan := make(chan *syscall.WaitStatus, 1)
+
+		//TODO change this to work with the pipes thing
 
 		go comm(stdin, stdout, stderr, FuzzChan{result, retchan, quit}, strargs) // start the fuzzer function
 

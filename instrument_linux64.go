@@ -12,7 +12,7 @@ const infectFile string = "./linux64_hook.bin"
 const packageFile string = "./linux64_package.bin"
 
 func symAddr(path string, symbol string) (uint64, error) {
-
+	//todo
 }
 
 func instrument(path string, addr uint64) (string, []ProgFD, error) {
