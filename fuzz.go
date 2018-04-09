@@ -11,6 +11,7 @@ import (
 
 // used for reporting a crash, find, etc
 // should include all necessary info to repeat the crash
+// Input and Output can be whatever the user wants for those
 type Hit struct {
 	Kind   string
 	Args   []string
