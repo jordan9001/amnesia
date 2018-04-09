@@ -10,17 +10,25 @@ import (
 )
 
 type Context struct {
-	Path	    string
-	WorkerCount int
-	BufferSize  int
-	Timeout     time.Duration
-	FDs	    []ProgFD
+	Path          string
+	WorkerCount   int
+	BufferSize    int
+	Timeout       time.Duration
+	FDs           []ProgFD
+	InfectionAddr uint64
+	InfectionSym  string
 }
 
+// when fuzzing first thing is to make a context.
+// Then you can add fd pipes and memfuzz things, if you want
 
-//TODO make a bunch of context genorators
-// Should also do early checks, like checking the file exists?
-// Have a MemFuzz context creator
-func StandardContext() Context {
-	//TODO
+func InfectedContext(ctx *Context) bool {
+	return (len(ctx.FDs) > 0 || ctx.InfectionAddr != 0 || ctx.InfectionSym != "")
+}
+
+func CleanupContext(ctx *Context) {
+	// cleans up leftover named pipes and infected files
+	if InfectedContext(ctx) {
+		cleanInstrumentation(ctx)
+	}
 }
