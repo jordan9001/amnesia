@@ -38,14 +38,14 @@ PONG:
 FORK_LOOP:
 	; wait for confirmation on stdin
 	xor rax, rax	; sys_read
-	xor rdi, rdi	; fd
-	push rax
+	xor rdi, rdi	; fd = 0 = stdin
+	sub rsp, 1
 	mov rsi, rsp	; buf
 	xor rdx, rdx	
 	inc rdx		; len
 	syscall
 	
-	pop rdx		; what we read
+	pop dl		; what we read
 	test rax, rax
 	js END_FORK_SERVER
 	
@@ -60,7 +60,23 @@ FORK_LOOP:
 
 	test rax, rax
 	js END_FORK_SERVER	; error
-	jnz FORK_LOOP
+	jz OUT_CHILD
+	
+	; tell the server the pid we just forked off on stdout
+	push rax
+	mov rsi, rsp	; buf
+	xor rax, rax
+	inc rax		; sys_write
+	xor rdi, rdi
+	inc rdi		; fd = 1 = stdout
+	mov rdx, 4	; count
+	syscall
+
+	pop rax
+
+	jmp FORK_LOOP
+
+OUT_CHILD:
 
 	; do stuff for the child process here	
 	; open all pipes to the proper fds
