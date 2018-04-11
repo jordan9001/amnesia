@@ -24,14 +24,25 @@ PONG:
 	pop rcx
 	pop rax
 	
-	sub rax, [rcx + HOOK_OFF]
+	sub rax, [rcx + HOOK_POS]
 
 	; first we have to unpatch the hook
-	mov r12, [rcx + PIPE_COUNT_OFF]
-	lea r12, [r12 * PIPE_STRUCT_SZ]
-	lea r12, [r12 + PIPE_COUNT_OFF + rcx]
+	mov r12, [rcx + HOOK_OFF]
+	lea r12, [r12 + rcx]
 	
-	;TODO
+	mov rbx, [r12] ; length of hook un-patch
+	add r12, 8
+	
+REPATCH_LOOP:
+	mov cl, BYTE[r12]
+	mov BYTE[rax], cl
+
+	inc rax
+	inc r12
+
+	dec rbx
+	test rbx, rbx
+	jne REPATCH_LOOP
 
 	; Ok, now we set up the fork server
 
@@ -45,7 +56,8 @@ FORK_LOOP:
 	inc rdx		; len
 	syscall
 	
-	pop dl		; what we read
+	mov dl, BYTE[rsp]	; what we read
+	add rsp, 1
 	test rax, rax
 	js END_FORK_SERVER
 	
@@ -82,12 +94,12 @@ OUT_CHILD:
 	; open all pipes to the proper fds
 	
 	mov r12, [rcx + PIPE_COUNT_OFF]
+
+	lea rbx, [rcx + PIPE_LIST_OFF]
 	
 PIPE_SET_LOOP:
 	cmp r12, 0
 	je PIPE_LOOP_END
-
-	lea rbx, [rcx + PIPE_LIST_OFF + (rax * PIPE_STRUCT_SZ)]
 	
 	; do the regular file descriptor stuff here
 	
@@ -110,7 +122,8 @@ HANDLE_READER_FD:
 
 	; dup2 (oldfd, newfd)
 	mov rdi, rax	; old fd
-	movzx rsi, DWORD[rbx + PIPE_FD_OFF] ; fd to replace
+	xor rsi, rsi
+	mov esi, DWORD[rbx + PIPE_FD_OFF] ; fd to replace
 	mov rax, 33	; sys_dup2
 	syscall
 
@@ -166,6 +179,7 @@ MEM_HARD_ADDR:
 HANDLED_PIPE_STRUCT:
 
 	dec r12
+	lea rbx, [rbx + PIPE_STRUCT_SZ] ; move to next pipe
 	jmp PIPE_SET_LOOP
 
 PIPE_LOOP_END:	
@@ -206,6 +220,10 @@ VAR_START:
 	; Variables go here
 
 	; offset in hook from the ret to the beginning
+	HOOK_POS equ $-VAR_START
+	dq 0
+
+	; offset in var list to hook size and hook
 	HOOK_OFF equ $-VAR_START
 	dq 0
 
@@ -226,7 +244,7 @@ VAR_START:
 
 	PIPE_STRUCT_SZ equ 0x18
 	PIPE_TYPE_OFF equ 0x0
-	PIPT_FD_OFF equ 0x1
+	PIPE_FD_OFF equ 0x1
 	PIPE_NAME_OFF equ 0x5
 	; pipe struct:
 	; uint8	   type

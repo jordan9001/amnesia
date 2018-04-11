@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-const progpre string = ".amninfected_"
+const progpre string = ".amn_"
 const infectFile string = "./linux64_hook.bin"
 const packageFile string = "./linux64_package.bin"
 
@@ -30,7 +30,7 @@ func addr2fileoff(f elf.File, addr uint64) (uint64, error) {
 	return 0, fmt.Errorf("Unable to find section in file at virtual address 0x%x\n", addr)
 }
 
-func instrument(ctx *Context) (*Context, error) {
+func instrument(ctx *Context, suffix string) (*Context, error) {
 	if ctx.Path == "" {
 		return ctx, fmt.Errorf("Empty path in context to insturment")
 	}
@@ -52,19 +52,18 @@ func instrument(ctx *Context) (*Context, error) {
 	}
 	defer s.Close()
 
-	dst_path := progpre + path
+	dst_path := progpre + path + suffix
 
 	d, err := os.Create(dst_path)
 	if err != nil {
 		return ctx, err
 	}
+	defer d.Close()
 
 	_, err = io.Copy(d, orig)
 	if err != nil {
 		return ctx, err
 	}
-
-	d.Close()
 
 	// find file location of address
 	f, err := elf.Open(dst_path)
@@ -83,12 +82,67 @@ func instrument(ctx *Context) (*Context, error) {
 
 	// get infection
 	hook, err := os.Open(infectFile)
+	if err != nil {
+		return ctx, err
+	}
+	defer hook.Close()
+
+	// get size
+	hook_info, err := hook.Stat()
+	if err != nil {
+		return ctx, err
+	}
+
+	hook_buf := make([]byte, hook_info.Size(), hook_info.Size() + len(packageFile)) // greater cap for package path
+
+	_, err = hook.Read(hook_buf)
+	if err != nil {
+		return ctx, err
+	}
+
+	// fill in package file size var
+	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf) - 8:], len(packageFile))
+
+	// fill in path to package file
+	hook_buf = append(hook_buf, []byte(packageFile)...)
 
 	// read what will be overwritten
+
+	orig_buf := make([]byte, len(hook_buf))
+
+	n, err := d.ReadAt(orig_buf, foff)
+	if err != nil {
+		return ctx, err
+	}
+	if n != len(orig_buf) {
+		return ctx, fmt.Errorf("Could not insert hook at %x\n", foff)
+	}
+
 	// overwrite
+	_, err := d.WriteAt(hook_buf, foff)
+	if err != nil {
+		return ctx, err
+	}
+
 	// customize the package
+	pack, err := os.Open(packageFile)
+	if err != nil {
+		return ctx, err
+	}
+
+	pack_info, err := pack.Stat()
+	if err != nil {
+		return ctx, err
+	}
+
+	// the vars to be appended are the fd_pipe infos and then un-patch len then un-patch
+	pack_app_buf := make
+
+	pack_buf := make([]byte, hook_info.Size(), hook_info.Size() + append_size)
+
 	// have to create pipe files here for each worker
 	// because each package needs the path to it's workers pipes
+
 	return ctx, nil
 }
 

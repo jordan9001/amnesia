@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -90,7 +91,7 @@ func fuzz(ctx *Context, args interface{}, comm CommFunc, quit chan struct{}) (re
 		pipes, ctxn, err = instrument(ctx)
 
 		for i := 0; i < ctx.WorkerCount; i++ {
-			ctxn, err := instrument(ctx)
+			ctxn, err := instrument(ctx, "." + strconv.Itoa(i))
 			// Create the infect handling workers, handing them their named pipes to use
 			go fuzzInfectedWorker(ctxn, strargs, comm, results, quit)
 		}
