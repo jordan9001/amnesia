@@ -136,9 +136,15 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 
 	// the vars to be appended are the fd_pipe infos and then un-patch len then un-patch
-	pack_app_buf := make
+	pa_len = 0x18 * len(ctx.FDs) + 8 + len(orig_buf)
+	pack_app_buf := make([]byte, pa_len)
 
-	pack_buf := make([]byte, hook_info.Size(), hook_info.Size() + append_size)
+	pack_buf := make([]byte, pack_info.Size(), pack_info.Size() + len(pack_app_buf))
+
+	_, err = pack.Read(pack_buf)
+	if err != nil {
+		return ctx, err
+	}
 
 	// have to create pipe files here for each worker
 	// because each package needs the path to it's workers pipes
