@@ -93,7 +93,7 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, err
 	}
 
-	hook_buf := make([]byte, hook_info.Size(), hook_info.Size() + len(packageFile)) // greater cap for package path
+	hook_buf := make([]byte, hook_info.Size(), hook_info.Size()+len(packageFile)) // greater cap for package path
 
 	_, err = hook.Read(hook_buf)
 	if err != nil {
@@ -101,7 +101,7 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 
 	// fill in package file size var
-	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf) - 8:], len(packageFile))
+	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf)-8:], len(packageFile))
 
 	// fill in path to package file
 	hook_buf = append(hook_buf, []byte(packageFile)...)
@@ -138,7 +138,7 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 	// the vars to be appended are the fd_pipe infos and then un-patch len then un-patch
 	pack_app_buf := make
 
-	pack_buf := make([]byte, hook_info.Size(), hook_info.Size() + append_size)
+	pack_buf := make([]byte, hook_info.Size(), hook_info.Size()+append_size)
 
 	// have to create pipe files here for each worker
 	// because each package needs the path to it's workers pipes
