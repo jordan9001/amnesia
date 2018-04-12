@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"syscall"
 )
 
@@ -30,7 +31,7 @@ func addr2fileoff(f elf.File, addr uint64) (uint64, error) {
 	return 0, fmt.Errorf("Unable to find section in file at virtual address 0x%x\n", addr)
 }
 
-func instrument(ctx *Context, suffix string) (*Context, error) {
+func Instrument(ctx *Context, suffix string) (*Context, error) {
 	if ctx.Path == "" {
 		return ctx, fmt.Errorf("Empty path in context to insturment")
 	}
@@ -171,6 +172,19 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 	// append the info
 	for i, _ := range nctx.FDs {
 		// first create the fifo
+		if nctx.FDs[i].File == nil || nctx.FDs[i].File == "" {
+			nctx.FDs[i].File = strconv.Itoa(nctx.FDs[i].FD)
+			switch (nctx.FDs[i].Type) {
+			case PROG_INPUT_FD:
+				nctx.FDs[i].File += "INN"
+			case PROG_OUTPUT_FD:
+				nctx.FDs[i].File += "OUT"
+			case MEM_FUZZ_FD:
+				nctx.FDs[i].File += "FUZ"
+			default:
+				return ctx, fmt.Errorf("Unknown ProfFD type")
+			}
+		}
 		nctx.FDs[i].File += suffix
 
 		pipe, err := createPipe(nctx.FDs[i].File, nctx.FDs[i].Type)

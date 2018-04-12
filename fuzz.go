@@ -75,8 +75,6 @@ func fuzz(ctx *Context, args interface{}, comm CommFunc, quit chan struct{}) (re
 		}
 
 		// infect the binary for us to do the things
-		pipes, ctxn, err = instrument(ctx)
-
 		for i := 0; i < ctx.WorkerCount; i++ {
 			ctxn, err := instrument(ctx, "." + strconv.Itoa(i))
 			// Create the infect handling workers, handing them their named pipes to use
