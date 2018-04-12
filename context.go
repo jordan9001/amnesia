@@ -1,11 +1,6 @@
 package amnesia
 
 import (
-	"context"
-	"io"
-	"log"
-	"os/exec"
-	"syscall"
 	"time"
 )
 
@@ -26,10 +21,11 @@ func InfectedContext(ctx *Context) bool {
 	return (len(ctx.FDs) > 0 || ctx.InfectionAddr != 0 || ctx.InfectionSym != "")
 }
 
-func CleanupContext(ctx *Context) {
+func (c *Context) Cleanup() {
 	// cleans up leftover named pipes and infected files
-	if InfectedContext(ctx) {
-		cleanInstrumentation(ctx)
+	// should be called on the infected generated contexts after the worker is cleaning up
+	if InfectedContext(c) {
+		cleanupInfection(c)
 	}
 }
 
@@ -38,7 +34,7 @@ func (c *Context) Copy() *Context {
 
 	nc = *c
 
-	nfds = make([]ProgFD, len(c.FDs))
+	nfds := make([]ProgFD, len(c.FDs))
 
 	for i, v := range c.FDs {
 		nfds[i] = v

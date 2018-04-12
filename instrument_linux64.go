@@ -3,25 +3,25 @@
 package amnesia
 
 import (
+	"encoding/binary"
 	"debug/elf"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"syscall"
 )
 
 const progpre string = ".amn_"
-const infectFile string = "./linux64_hook.bin"
-const packageFile string = "./linux64_package.bin"
+const infectFile string = "./hook.bin"
+const packageFile string = "./package.bin"
 
 func symAddr(path string, symbol string) (uint64, error) {
 
 	return 0, fmt.Errorf("Infection by Symbol unsupported right now")
 }
 
-func addr2fileoff(f elf.File, addr uint64) (uint64, error) {
+func addr2fileoff(f *elf.File, addr uint64) (uint64, error) {
 	for _, s := range f.Sections {
 		if addr >= s.Addr && addr < (s.Addr+s.Size) {
 			// found the correct section
@@ -40,10 +40,11 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 		if ctx.InfectionSym == "" {
 			return ctx, fmt.Errorf("No specified point of infection")
 		}
-		ctx.InfectionAddr, err = symAddr(ctx.Path, ctx.InfectionSym)
+		iAddr, err := symAddr(ctx.Path, ctx.InfectionSym)
 		if err != nil {
 			return ctx, err
 		}
+		ctx.InfectionAddr = iAddr
 	}
 
 	// copy binary
@@ -51,9 +52,9 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	if err != nil {
 		return ctx, err
 	}
-	defer s.Close()
+	defer orig.Close()
 
-	dst_path := progpre + path + suffix
+	dst_path := progpre + ctx.Path + suffix
 
 	d, err := os.Create(dst_path)
 	if err != nil {
@@ -72,7 +73,7 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, err
 	}
 
-	foff, err := addr2fileoff(f, addr)
+	foff, err := addr2fileoff(f, ctx.InfectionAddr)
 	f.Close()
 	if err != nil {
 		return ctx, err
@@ -91,7 +92,7 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, err
 	}
 
-	hook_buf := make([]byte, hook_info.Size(), hook_info.Size()+len(packageFile)) // greater cap for package path
+	hook_buf := make([]byte, hook_info.Size(), hook_info.Size()+int64(len(packageFile))) // greater cap for package path
 
 	_, err = hook.Read(hook_buf)
 	if err != nil {
@@ -99,7 +100,7 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 
 	// fill in package file size var
-	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf)-8:], len(packageFile))
+	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf)-8:], uint64(len(packageFile)))
 
 	// fill in path to package file
 	hook_buf = append(hook_buf, []byte(packageFile)...)
@@ -108,7 +109,7 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 
 	orig_buf := make([]byte, len(hook_buf))
 
-	n, err := d.ReadAt(orig_buf, foff)
+	n, err := d.ReadAt(orig_buf, int64(foff))
 	if err != nil {
 		return ctx, err
 	}
@@ -117,7 +118,7 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 
 	// overwrite
-	_, err := d.WriteAt(hook_buf, foff)
+	_, err = d.WriteAt(hook_buf, int64(foff))
 	if err != nil {
 		return ctx, err
 	}
@@ -134,10 +135,10 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 
 	// the vars to be appended are the fd_pipe infos and then un-patch len then un-patch
-	pa_len = 0x18 * len(ctx.FDs) + 8 + len(orig_buf)
+	pa_len := 0x18 * len(ctx.FDs) + 8 + len(orig_buf)
 	pack_app_buf := make([]byte, pa_len)
 
-	pack_buf := make([]byte, pack_info.Size(), pack_info.Size() + len(pack_app_buf))
+	pack_buf := make([]byte, pack_info.Size(), pack_info.Size() + int64(len(pack_app_buf)))
 
 	_, err = pack.Read(pack_buf)
 	if err != nil {
@@ -154,25 +155,25 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	// write hook_off
 	var v_hook_off int64
 	// distance from VAR_START to the hook size field
-	v_hook_off = (0x18 * len(ctx.FDs)) + (3 * 8)
+	v_hook_off = int64((0x18 * len(ctx.FDs)) + (3 * 8))
 	poff = len(pack_buf) - (8 * 2)
 	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_hook_off))
 
 	// write num pipes
 	var v_num_pipes int64
-	v_num_pipes = len(ctx.FDs)
+	v_num_pipes = int64(len(ctx.FDs))
 	poff = len(pack_buf) - (8 * 1)
 	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_num_pipes))
 
 	// create a new context
 	nctx := ctx.Copy()
-	nctx.Path = dstpath
+	nctx.Path = dst_path
 
 	// create the named pipes
 	// append the info
 	for i, _ := range nctx.FDs {
 		// first create the fifo
-		if nctx.FDs[i].File == nil || nctx.FDs[i].File == "" {
+		if nctx.FDs[i].File == "" {
 			nctx.FDs[i].File = strconv.Itoa(nctx.FDs[i].FD)
 			switch (nctx.FDs[i].Type) {
 			case PROG_INPUT_FD:
@@ -203,16 +204,16 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 
 	// append unpatch len and unpatch
-	unpatch_buf = make([]byte, len(orig_buf) + 8)
+	unpatch_buf := make([]byte, len(orig_buf) + 8)
 	binary.LittleEndian.PutUint64(unpatch_buf, uint64(len(nctx.FDs)))
 	copy(unpatch_buf[8:], orig_buf)
 
-	pack_buf = append(pack_buf, unpatch_buf)
+	pack_buf = append(pack_buf, unpatch_buf...)
 
 	return nctx, nil
 }
 
-func createPipe(path string, t fdtype) io.Closer, error {
+func createPipe(path string, t fdtype) (io.Closer, error) {
 	err := syscall.Mkfifo(path, 0666)
 	if err != nil {
 		return nil, err
@@ -234,8 +235,8 @@ func createPipe(path string, t fdtype) io.Closer, error {
 
 func cleanupInfection(ctx *Context) error {
 	for i, _ := range ctx.FDs {
-		ctx.FDs[i].Pipe.Close()
-		os.Remove(ctx.FDs[i].File)
+			ctx.FDs[i].Pipe.Close()
+			os.Remove(ctx.FDs[i].File)
 	}
 	return os.Remove(ctx.Path)
 }

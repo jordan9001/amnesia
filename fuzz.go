@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -43,11 +43,11 @@ func FuzzArgs(ctx *Context, args ArgFunc, comm CommFunc, quit chan struct{}) (re
 	if InfectedContext(ctx) {
 		return nil, fmt.Errorf("Can not use FuzzArgs on an infected fuzzing context")
 	}
-	return fuzz(ctx, path, args, comm, quit)
+	return fuzz(ctx, args, comm, quit)
 }
 
 func Fuzz(ctx *Context, args []string, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
-	return fuzz(ctx, path, args, comm, quit)
+	return fuzz(ctx, args, comm, quit)
 }
 
 func fuzz(ctx *Context, args interface{}, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
@@ -76,7 +76,10 @@ func fuzz(ctx *Context, args interface{}, comm CommFunc, quit chan struct{}) (re
 
 		// infect the binary for us to do the things
 		for i := 0; i < ctx.WorkerCount; i++ {
-			ctxn, err := instrument(ctx, "." + strconv.Itoa(i))
+			ctxn, err := Instrument(ctx, "." + strconv.Itoa(i))
+			if err != nil {
+				return nil, err
+			}
 			// Create the infect handling workers, handing them their named pipes to use
 			go fuzzInfectedWorker(ctxn, strargs, comm, results, quit)
 		}
@@ -123,9 +126,9 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		}
 
 		var pid int32
-		binary.Read(buf, binary.LittleEndian, &pid)
+		pid = int32(binary.LittleEndian.Uint32(buf))
 
-		p, err := os.FindProcess(pid)
+		p, err := os.FindProcess(int(pid))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -148,11 +151,7 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		var status *syscall.WaitStatus
 		status = nil
 
-		pstate, err := os.Wait(p)
-		if err != nil {
-			log.Fatal(err)
-		}
-
+		_, err = p.Wait()
 		if err != nil {
 			if exerr, ok := err.(*exec.ExitError); ok {
 				// here we get into platform dependent stuff
@@ -184,8 +183,9 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 	}
 
 	// kill the fork server
-	fserv.Kill()
-	// TODO cleanup the named_pipes passed to us
+	fserv.Process.Kill()
+	// cleanup the named_pipes passed to us
+	ctx.Cleanup()
 }
 
 func fuzzWorker(ctx *Context, args interface{}, comm CommFunc, result chan Hit, quit chan struct{}) {
@@ -204,9 +204,9 @@ func fuzzWorker(ctx *Context, args interface{}, comm CommFunc, result chan Hit, 
 
 		if ctx.Timeout > 0 {
 			timectx, _ := context.WithTimeout(context.Background(), ctx.Timeout)
-			cmd = exec.CommandContext(timectx, path, strargs...)
+			cmd = exec.CommandContext(timectx, ctx.Path, strargs...)
 		} else {
-			cmd = exec.Command(path, strargs...)
+			cmd = exec.Command(ctx.Path, strargs...)
 		}
 
 		// Handle the file descriptor things
@@ -228,7 +228,7 @@ func fuzzWorker(ctx *Context, args interface{}, comm CommFunc, result chan Hit, 
 		if err != nil {
 			log.Fatal(err)
 		}
-		pfds[2] = ProgFD{FD: 2, Type: PROG_OUTPUT_FD, Pipe: stdout}
+		pfds[2] = ProgFD{FD: 2, Type: PROG_OUTPUT_FD, Pipe: stderr}
 
 		retchan := make(chan *syscall.WaitStatus, 1)
 

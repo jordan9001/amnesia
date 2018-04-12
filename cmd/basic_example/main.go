@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/jordan9001/amnesia"
-	"io"
 	"log"
 	"math/rand"
 	"strings"
@@ -12,7 +11,9 @@ import (
 
 const max_size = 0x100
 
-func tryRand(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc amnesia.FuzzChan, args []string) {
+func tryRand(comset []amnesia.ProgFD, fc amnesia.FuzzChan, args []string) {
+	stdin, stdout, _ := amnesia.GetStdPipes(comset)
+
 	// basic send of random readablecharacters
 	size := rand.Intn(max_size-2) + 2
 	in := make([]byte, size)
@@ -43,7 +44,9 @@ func tryRand(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc amnesia.Fuzz
 	amnesia.ReportFaults(string(in), fc)
 }
 
-func trySmart(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc amnesia.FuzzChan, args []string) {
+func trySmart(comset []amnesia.ProgFD, fc amnesia.FuzzChan, args []string) {
+	stdin, stdout, _ := amnesia.GetStdPipes(comset)
+
 	size := rand.Intn(0x80)
 	in := make([]byte, 0)
 	for i:=0; i<size; i++ {
@@ -70,17 +73,18 @@ func trySmart(stdin io.WriteCloser, stdout, stderr io.ReadCloser, fc amnesia.Fuz
 }
 
 func main() {
-	var ctx amnesia.Context
+	var ctx *amnesia.Context = &amnesia.Context{}
 
 	ctx.WorkerCount = 60
 	ctx.BufferSize = 30
 	ctx.Timeout = time.Second * 3
+	ctx.Path = "./basic"
 
 	var quitchan chan struct{} = nil
 	var args = []string{}
 
-	resRand, _ := amnesia.Fuzz(ctx, "./basic", args, tryRand, quitchan)
-	resSmart, _ := amnesia.Fuzz(ctx, "./basic", args, trySmart, quitchan)
+	resRand, _ := amnesia.Fuzz(ctx, args, tryRand, quitchan)
+	resSmart, _ := amnesia.Fuzz(ctx, args, trySmart, quitchan)
 
 	var h amnesia.Hit
 	for {
