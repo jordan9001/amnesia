@@ -32,3 +32,19 @@ func CleanupContext(ctx *Context) {
 		cleanInstrumentation(ctx)
 	}
 }
+
+func (c *Context) Copy() *Context {
+	var nc Context
+
+	nc = *c
+
+	nfds = make([]ProgFD, len(c.FDs))
+
+	for i, v := range c.FDs {
+		nfds[i] = v
+	}
+
+	nc.FDs = nfds
+
+	return &nc
+}

@@ -77,9 +77,6 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, err
 	}
 
-	log.Printf("Would have infected at %x\n", foff)
-	os.Exit(0)
-
 	// get infection
 	hook, err := os.Open(infectFile)
 	if err != nil {
@@ -146,16 +143,85 @@ func instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, err
 	}
 
-	// have to create pipe files here for each worker
-	// because each package needs the path to it's workers pipes
+	// write hook_pos
+	var v_hook_pos int64
+	// according to the disassember, the ret addr will point 0x49 bytes off from the patch start
+	v_hook_pos = -0x49
+	poff := len(pack_buf) - (8 * 3)
+	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_hook_pos))
 
-	return ctx, nil
+	// write hook_off
+	var v_hook_off int64
+	// distance from VAR_START to the hook size field
+	v_hook_off = (0x18 * len(ctx.FDs)) + (3 * 8)
+	poff = len(pack_buf) - (8 * 2)
+	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_hook_off))
+
+	// write num pipes
+	var v_num_pipes int64
+	v_num_pipes = len(ctx.FDs)
+	poff = len(pack_buf) - (8 * 1)
+	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_num_pipes))
+
+	// create a new context
+	nctx := ctx.Copy()
+	nctx.Path = dstpath
+
+	// create the named pipes
+	// append the info
+	for i, _ := range nctx.FDs {
+		// first create the fifo
+		nctx.FDs[i].File += suffix
+
+		pipe, err := createPipe(nctx.FDs[i].File, nctx.FDs[i].Type)
+		if err != nil {
+			return ctx, err
+		}
+
+		nctx.FDs[i].Pipe = pipe
+
+		// then get the serialized version
+		fd_buf, err := nctx.FDs[i].Pack()
+		if err != nil {
+			return ctx, err
+		}
+		pack_buf = append(pack_buf, fd_buf...)
+	}
+
+	// append unpatch len and unpatch
+	unpatch_buf = make([]byte, len(orig_buf) + 8)
+	binary.LittleEndian.PutUint64(unpatch_buf, uint64(len(nctx.FDs)))
+	copy(unpatch_buf[8:], orig_buf)
+
+	pack_buf = append(pack_buf, unpatch_buf)
+
+	return nctx, nil
 }
 
-func createPipe(path string) error {
-	return syscall.Mkfifo(path, 0666)
+func createPipe(path string, t fdtype) io.Closer, error {
+	err := syscall.Mkfifo(path, 0666)
+	if err != nil {
+		return nil, err
+	}
+
+	var pipe io.Closer
+	if t == PROG_INPUT_FD || t == MEM_FUZZ_FD {
+		pipe, err = os.OpenFile(path, os.O_WRONLY, os.ModeNamedPipe)
+	} else {
+		pipe, err = os.OpenFile(path, os.O_RDONLY, os.ModeNamedPipe)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return pipe, nil
 }
 
-func cleanInstrumentation(ctx *Context) error {
+func cleanupInfection(ctx *Context) error {
+	for i, _ := range ctx.FDs {
+		ctx.FDs[i].Pipe.Close()
+		os.Remove(ctx.FDs[i].File)
+	}
 	return os.Remove(ctx.Path)
 }

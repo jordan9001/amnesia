@@ -32,19 +32,6 @@ type FuzzChan struct {
 	Quit   chan struct{}
 }
 
-const (
-	PROG_INPUT_FD  uint8 = 0
-	PROG_OUTPUT_FD uint8 = 1
-	MEM_FUZZ_FD    uint8 = 2
-)
-
-type ProgFD struct {
-	FD   int
-	Type uint8     // Could be a buff fuzz thing, a reader, or a writer
-	File string    // if this is not nil, then we have a named pipe file to delete
-	Pipe io.Closer // needs to be type asserted to a io.WriteCloser or io.ReadCloser
-}
-
 // CommFunc will communicate with the program
 // CommFunc has final say about when to make and send on a Hit
 // send hit on result
