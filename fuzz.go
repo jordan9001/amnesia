@@ -148,12 +148,6 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		ctx.Setup(pfds)
 	}
 
-	// open the pipes
-	for i, _ := range ctx.FDs {
-		ctx.FDs[i].Open()
-	}
-	log.Printf("Pipes Open\n") //TODO remove printouts
-
 	buf := make([]byte, 4)
 
 	for loop {
@@ -177,6 +171,13 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		// open the pipes
+		log.Printf("Opening Pipes\n")
+		for i, _ := range ctx.FDs {
+			ctx.FDs[i].Open()
+		}
+		log.Printf("Pipes Open\n") //TODO remove printouts
 
 		retchan := make(chan *syscall.WaitStatus, 1)
 

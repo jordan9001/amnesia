@@ -11,15 +11,22 @@ import (
 func prefuzz(comset []amnesia.ProgFD) {
 	log.Printf("Sending initial communication with program before the fork server\n")
 	stdin, stdout, _ := amnesia.GetStdPipes(comset)
+	if stdin == nil || stdout == nil {
+		log.Fatal("No Standard Pipes")
+	}
 
-	welcome_msg := make([]byte, 1024)
-	n, err := stdout.Read(welcome_msg)
+	_, err := stdin.Write([]byte("AAAA"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("%s\n", string(welcome_msg[:n]))
 
-	stdin.Write([]byte("AAAA"))
+	//welcome_msg := make([]byte, 1024)
+	//n, err := stdout.Read(welcome_msg)
+	//if err != nil {
+	//	log.Printf("Bad")
+	//	log.Fatal(err)
+	//}
+	//log.Printf("%s\n", string(welcome_msg[:n]))
 
 	log.Printf("Initialized program\n")
 }

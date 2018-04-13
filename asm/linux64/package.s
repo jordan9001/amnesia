@@ -50,7 +50,9 @@ FORK_LOOP:
 	mov rsi, rsp	; buf
 	xor rdx, rdx	
 	inc rdx		; len
+	push rcx
 	syscall
+	pop rcx
 	
 	mov dl, BYTE[rsp]	; what we read
 	add rsp, 1
@@ -64,7 +66,9 @@ FORK_LOOP:
 	mov rsi, rsp	; new stack pointer
 	xor rdx, rdx	; parent tid
 	xor r10, r10	; child tid
+	push rcx
 	syscall
+	pop rcx
 
 	test rax, rax
 	js END_FORK_SERVER	; error
@@ -78,7 +82,9 @@ FORK_LOOP:
 	xor rdi, rdi
 	inc rdi		; fd = 1 = stdout
 	mov rdx, 4	; count
+	push rcx
 	syscall
+	pop rcx
 
 	pop rax
 
@@ -110,7 +116,9 @@ HANDLE_READER_FD:
 	xor rdx, rdx
 	mov dl, BYTE[rbx + PIPE_TYPE_OFF]	; O_RDONLY = 0, O_WRONLY = 1
 	mov rax, 2	; sys_open
+	push rcx
 	syscall
+	pop rcx
 
 	test rax, rax
 	; bad bad if we can't open it jump to exit 
@@ -121,7 +129,9 @@ HANDLE_READER_FD:
 	xor rsi, rsi
 	mov esi, DWORD[rbx + PIPE_FD_OFF] ; fd to replace
 	mov rax, 33	; sys_dup2
+	push rcx
 	syscall
+	pop rcx
 
 	test rax, rax
 	js FD_ERROR
@@ -134,7 +144,9 @@ HANDLE_MEM_FUZZ_FD:
 	xor rsi, rsi
 	xor rdx, rdx
 	mov rax, 2	; sys_open
+	push rcx
 	syscall
+	pop rcx
 
 	test rax, rax
 	js FD_ERROR
@@ -148,7 +160,9 @@ HANDLE_MEM_FUZZ_FD:
 	mov rsi, rsp	; buf
 	mov rdx, FUZZ_HEADER_SZ	; count
 	xor rax, rax	; sys_read
+	push rcx
 	syscall
+	pop rcx
 
 	test rax, rax
 	js FD_ERROR
@@ -165,12 +179,16 @@ HANDLE_MEM_FUZZ_FD:
 MEM_HARD_ADDR:
 	pop rdx		; count
 	xor rax, rax	; sys_read
+	push rcx
 	syscall
+	pop rcx
 
 	; close this one
 	mov rax, 3	; sys_close
 	; rdi should already be the fd
+	push rcx
 	syscall
+	pop rcx
 
 HANDLED_PIPE_STRUCT:
 

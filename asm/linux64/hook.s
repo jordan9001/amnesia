@@ -16,12 +16,12 @@ _start:
 
 	jmp PING
 PONG:
-	pop rcx ; var start
+	pop rbx ; var start
 
 	; OPEN rax=2, rdi=filename, rsi=flags, rdx=mode
 	xor rax, rax
 	mov al, 2
-	lea rdi, [rcx + PATH_OFF]
+	lea rdi, [rbx + PATH_OFF]
 	xor rsi, rsi
 	xor rdx, rdx	; READONLY
 	
@@ -33,9 +33,9 @@ PONG:
 	xor rax, rax
 	mov al, 9
 	xor rdi, rdi
-	mov rsi, [rcx + LEN_OFF]
+	mov rsi, [rbx + LEN_OFF]
 	xor rdx, rdx
-	mov rdx, 5	; PROT_READ | PROT_EXEC
+	mov dl, 5	; PROT_READ | PROT_EXEC
 	xor r10, r10
 	xor r9, r9
 
