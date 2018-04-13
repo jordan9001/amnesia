@@ -5,10 +5,6 @@ _start:
 	; We just got mapped and called by the hook
 	; stack is like this:
 	; 	ret addr (this - offset to beginning is where we need to unpatch before jumping back)
-	;	r15
-	;	r14
-	;	r13
-	;	r12
 	;	r11
 	;	r10
 	;	r9
@@ -27,18 +23,18 @@ PONG:
 	sub rax, [rcx + HOOK_POS]
 
 	; first we have to unpatch the hook
-	mov r12, [rcx + HOOK_OFF]
-	lea r12, [r12 + rcx]
+	mov r9, [rcx + HOOK_OFF]
+	lea r9, [r9 + rcx]
 	
-	mov rbx, [r12] ; length of hook un-patch
-	add r12, 8
+	mov rbx, [r9] ; length of hook un-patch
+	add r9, 8
 	
 REPATCH_LOOP:
-	mov cl, BYTE[r12]
+	mov cl, BYTE[r9]
 	mov BYTE[rax], cl
 
 	inc rax
-	inc r12
+	inc r9
 
 	dec rbx
 	test rbx, rbx
@@ -93,12 +89,12 @@ OUT_CHILD:
 	; do stuff for the child process here	
 	; open all pipes to the proper fds
 	
-	mov r12, [rcx + PIPE_COUNT_OFF]
+	mov r9, [rcx + PIPE_COUNT_OFF]
 
 	lea rbx, [rcx + PIPE_LIST_OFF]
 	
 PIPE_SET_LOOP:
-	cmp r12, 0
+	cmp r9, 0
 	je PIPE_LOOP_END
 	
 	; do the regular file descriptor stuff here
@@ -178,7 +174,7 @@ MEM_HARD_ADDR:
 
 HANDLED_PIPE_STRUCT:
 
-	dec r12
+	dec r9
 	lea rbx, [rbx + PIPE_STRUCT_SZ] ; move to next pipe
 	jmp PIPE_SET_LOOP
 
@@ -197,10 +193,6 @@ END_FORK_SERVER:
 
 RESTORE:
 	; rax should be the addr to jump back to
-	pop r15
-	pop r14
-	pop r13
-	pop r12
 	pop r11
 	pop r10
 	pop r9

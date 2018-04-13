@@ -9,14 +9,14 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"syscall"
+	"path"
 )
 
-const progpre string = ".amn_"
-const infectFile string = "./hook.bin"
-const packageFile string = "./package.bin"
+const progpre string = "amn_"
+var infectFile string = "./hook.bin"
+var packageFile string = "./package.bin"
 
-func symAddr(path string, symbol string) (uint64, error) {
+func symAddr(sympath string, symbol string) (uint64, error) {
 
 	return 0, fmt.Errorf("Infection by Symbol unsupported right now")
 }
@@ -29,6 +29,14 @@ func addr2fileoff(f *elf.File, addr uint64) (uint64, error) {
 		}
 	}
 	return 0, fmt.Errorf("Unable to find section in file at virtual address 0x%x\n", addr)
+}
+
+func SetHookPath(fpath string) {
+	infectFile = fpath
+}
+
+func SetPackagePath(fpath string) {
+	packageFile = fpath
 }
 
 func Instrument(ctx *Context, suffix string) (*Context, error) {
@@ -54,9 +62,9 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 	}
 	defer orig.Close()
 
-	dst_path := progpre + ctx.Path + suffix
+	dst_path := path.Dir(ctx.Path) + "/" + progpre + path.Base(ctx.Path) + suffix
 
-	d, err := os.Create(dst_path)
+	d, err := os.OpenFile(dst_path, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
 		return ctx, err
 	}
@@ -79,35 +87,13 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, err
 	}
 
-	// get infection
-	hook, err := os.Open(infectFile)
-	if err != nil {
-		return ctx, err
-	}
-	defer hook.Close()
-
-	// get size
-	hook_info, err := hook.Stat()
-	if err != nil {
-		return ctx, err
-	}
-
-	hook_buf := make([]byte, hook_info.Size(), hook_info.Size()+int64(len(packageFile))) // greater cap for package path
-
-	_, err = hook.Read(hook_buf)
-	if err != nil {
-		return ctx, err
-	}
-
-	// fill in package file size var
-	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf)-8:], uint64(len(packageFile)))
-
-	// fill in path to package file
-	hook_buf = append(hook_buf, []byte(packageFile)...)
+	// set the path for our new packageFile
+	pkpath := path.Dir(packageFile) + "/" + progpre + path.Base(packageFile) + suffix
 
 	// read what will be overwritten
+	hook_size := 0x56 + len(pkpath) + 1
 
-	orig_buf := make([]byte, len(hook_buf))
+	orig_buf := make([]byte, hook_size)
 
 	n, err := d.ReadAt(orig_buf, int64(foff))
 	if err != nil {
@@ -117,21 +103,59 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 		return ctx, fmt.Errorf("Could not insert hook at %x\n", foff)
 	}
 
-	// overwrite
+	// open the generic package
+	pack, err := os.Open(packageFile)
+	if err != nil {
+		return ctx, err
+	}
+	defer pack.Close()
+
+	// make the package buf
+	nctx, pack_buf, err := makePackBuf(ctx, pack, orig_buf, suffix)
+	if err != nil {
+		return ctx, err
+	}
+	nctx.Path = dst_path
+
+	// get generic hook
+	hook, err := os.Open(infectFile)
+	if err != nil {
+		return ctx, err
+	}
+	defer hook.Close()
+
+	// make the hook buf
+	hook_buf, err := makeHookBuf(nctx, hook, uint64(len(pack_buf)), pkpath)
+	if err != nil {
+		return ctx, err
+	}
+
+	// overwrite in copy of the bin
 	_, err = d.WriteAt(hook_buf, int64(foff))
 	if err != nil {
 		return ctx, err
 	}
 
-	// customize the package
-	pack, err := os.Open(packageFile)
+	// write out package file
+	infpk, err := os.Create(pkpath)
+	if err != nil {
+		return ctx, err
+	}
+	defer infpk.Close()
+
+	_, err = infpk.Write(pack_buf)
 	if err != nil {
 		return ctx, err
 	}
 
+	return nctx, nil
+}
+
+func makePackBuf(ctx *Context, pack *os.File, orig_buf []byte, suffix string) (*Context, []byte, error) {
+
 	pack_info, err := pack.Stat()
 	if err != nil {
-		return ctx, err
+		return ctx, nil, err
 	}
 
 	// the vars to be appended are the fd_pipe infos and then un-patch len then un-patch
@@ -142,7 +166,7 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 
 	_, err = pack.Read(pack_buf)
 	if err != nil {
-		return ctx, err
+		return ctx, nil, err
 	}
 
 	// write hook_pos
@@ -167,14 +191,13 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 
 	// create a new context
 	nctx := ctx.Copy()
-	nctx.Path = dst_path
 
 	// create the named pipes
 	// append the info
 	for i, _ := range nctx.FDs {
 		// first create the fifo
 		if nctx.FDs[i].File == "" {
-			nctx.FDs[i].File = strconv.Itoa(nctx.FDs[i].FD)
+			nctx.FDs[i].File = progpre + strconv.Itoa(nctx.FDs[i].FD)
 			switch (nctx.FDs[i].Type) {
 			case PROG_INPUT_FD:
 				nctx.FDs[i].File += "INN"
@@ -183,54 +206,58 @@ func Instrument(ctx *Context, suffix string) (*Context, error) {
 			case MEM_FUZZ_FD:
 				nctx.FDs[i].File += "FUZ"
 			default:
-				return ctx, fmt.Errorf("Unknown ProfFD type")
+				return ctx, nil, fmt.Errorf("Unknown ProfFD type")
 			}
 		}
 		nctx.FDs[i].File += suffix
 
-		pipe, err := createPipe(nctx.FDs[i].File, nctx.FDs[i].Type)
+		err := createPipe(nctx.FDs[i].File, nctx.FDs[i].Type)
 		if err != nil {
-			return ctx, err
+			return ctx, nil, err
 		}
-
-		nctx.FDs[i].Pipe = pipe
 
 		// then get the serialized version
 		fd_buf, err := nctx.FDs[i].Pack()
 		if err != nil {
-			return ctx, err
+			return ctx, nil, err
 		}
 		pack_buf = append(pack_buf, fd_buf...)
 	}
 
-	// append unpatch len and unpatch
 	unpatch_buf := make([]byte, len(orig_buf) + 8)
 	binary.LittleEndian.PutUint64(unpatch_buf, uint64(len(nctx.FDs)))
 	copy(unpatch_buf[8:], orig_buf)
-
+	// append unpatch len and unpatch
 	pack_buf = append(pack_buf, unpatch_buf...)
 
-	return nctx, nil
+	return nctx, pack_buf, nil
 }
 
-func createPipe(path string, t fdtype) (io.Closer, error) {
-	err := syscall.Mkfifo(path, 0666)
+func makeHookBuf(ctx *Context, hook *os.File, packageSize uint64, packagePath string) ([]byte, error) {
+	fmt.Printf("%d\n", packageSize)
+	// get size
+	hook_info, err := hook.Stat()
 	if err != nil {
 		return nil, err
 	}
 
-	var pipe io.Closer
-	if t == PROG_INPUT_FD || t == MEM_FUZZ_FD {
-		pipe, err = os.OpenFile(path, os.O_WRONLY, os.ModeNamedPipe)
-	} else {
-		pipe, err = os.OpenFile(path, os.O_RDONLY, os.ModeNamedPipe)
-	}
+	packagePath += "\x00" // add a null
 
+	// +1 for null
+	hook_buf := make([]byte, hook_info.Size(), hook_info.Size()+int64(len(packagePath)))
+
+	_, err = hook.Read(hook_buf)
 	if err != nil {
 		return nil, err
 	}
 
-	return pipe, nil
+	// fill in package file size var
+	binary.LittleEndian.PutUint64(hook_buf[len(hook_buf)-8:], packageSize)
+
+	// fill in path to package file
+	hook_buf = append(hook_buf, []byte(packagePath)...)
+
+	return hook_buf, nil
 }
 
 func cleanupInfection(ctx *Context) error {

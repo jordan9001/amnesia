@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -22,15 +23,15 @@ type Hit struct {
 	Output interface{}
 }
 
-// ArgFunc should generate command line arguments to be passed
-//TODO ArgFunc should also be able to fuzz Env Vars
-type ArgFunc func() []string
-
 type FuzzChan struct {
 	Result chan Hit
 	Status chan *syscall.WaitStatus
 	Quit   chan struct{}
 }
+
+// ArgFunc should generate command line arguments to be passed
+//TODO ArgFunc should also be able to fuzz Env Vars, and should be in the context
+type ArgFunc func() []string
 
 // CommFunc will communicate with the program
 // CommFunc has final say about when to make and send on a Hit
@@ -38,6 +39,11 @@ type FuzzChan struct {
 // get termination result on status
 // quit early if quit closes
 type CommFunc func(comset []ProgFD, fc FuzzChan, args []string)
+
+// SetupFunc is a function that will communicate with the program before it is handed off to CommFunc
+// it is useful for preping a command before a memfuzz or other infected fuzz
+// the setupfunc will only ever recieve fds stdin, stdout, and stderr
+type SetupFunc func(comset []ProgFD)
 
 func FuzzArgs(ctx *Context, args ArgFunc, comm CommFunc, quit chan struct{}) (results chan Hit, err error) {
 	if InfectedContext(ctx) {
@@ -72,6 +78,10 @@ func fuzz(ctx *Context, args interface{}, comm CommFunc, quit chan struct{}) (re
 		strargs, ok := args.([]string)
 		if !ok {
 			return nil, fmt.Errorf("Invalid arguments to a infected fuzzing target")
+		}
+
+		if len(ctx.FDs) == 0 {
+			return nil, fmt.Errorf("Empty File Descriptor list for infected") //TODO add standard 3 with function
 		}
 
 		// infect the binary for us to do the things
@@ -112,14 +122,48 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		log.Fatal(err)
 	}
 
+	var stderr io.ReadCloser = nil
+	if ctx.Setup != nil {
+		stderr, err = fserv.StderrPipe()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// start up the infected binary
+	err = fserv.Start()
+	if err != nil {
+		log.Fatalf("cmd.Start : %v\n", err)
+	}
+	log.Printf("Infection Running\n")
+
+	// initialize the program
+	if ctx.Setup != nil {
+		pfds := make([]ProgFD, 3)
+
+		pfds[0] = ProgFD{FD: 0, Type: PROG_INPUT_FD, Pipe: stdin}
+		pfds[1] = ProgFD{FD: 1, Type: PROG_OUTPUT_FD, Pipe: stdout}
+		pfds[2] = ProgFD{FD: 2, Type: PROG_OUTPUT_FD, Pipe: stderr}
+
+		ctx.Setup(pfds)
+	}
+
+	// open the pipes
+	for i, _ := range ctx.FDs {
+		ctx.FDs[i].Open()
+	}
+	log.Printf("Pipes Open\n") //TODO remove printouts
+
 	buf := make([]byte, 4)
 
 	for loop {
+		log.Printf("GOGO\n")
 		_, err = stdin.Write([]byte{1})
 		if err != nil {
 			log.Fatal(err)
 		}
 		// get the response of the pid so we can kill the forked one if timeout from stdout
+		log.Printf("PID\n")
 		_, err = stdout.Read(buf)
 		if err != nil {
 			log.Fatal(err)
@@ -127,6 +171,7 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 
 		var pid int32
 		pid = int32(binary.LittleEndian.Uint32(buf))
+		log.Printf("PID = %d\n", pid)
 
 		p, err := os.FindProcess(int(pid))
 		if err != nil {

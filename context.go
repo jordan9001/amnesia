@@ -9,10 +9,14 @@ type Context struct {
 	WorkerCount   int
 	BufferSize    int
 	Timeout       time.Duration
+
+	// the below items only refer to infected setups
 	FDs           []ProgFD
 	InfectionAddr uint64
 	InfectionSym  string
+	Setup         SetupFunc
 }
+// TODO argsfunc and args should maybe be in the context?
 
 // when fuzzing first thing is to make a context.
 // Then you can add fd pipes and memfuzz things, if you want

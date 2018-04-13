@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
+	"syscall"
 )
 
 const (
@@ -17,13 +19,14 @@ type fdtype uint8
 type ProgFD struct {
 	FD   int
 	Type fdtype   // Could be a buff fuzz thing, a reader, or a writer
+
 	File string    // if this is not nil, then we have a named pipe file to delete
 	Pipe io.Closer // needs to be type asserted to a io.WriteCloser or io.ReadCloser
 }
 
 func (f *ProgFD) Pack() ([]byte, error) {
-	if f.Pipe == nil {
-		return nil, fmt.Errorf("Tried to pack a ProgFD with no set Pipe")
+	if f.File == "" {
+		return nil, fmt.Errorf("Tried to pack a ProgFD with no set File")
 	}
 	fd_buf := make([]byte, 0x18)
 	// Type
@@ -31,6 +34,7 @@ func (f *ProgFD) Pack() ([]byte, error) {
 	// FD
 	binary.LittleEndian.PutUint32(fd_buf[1:], uint32(f.FD))
 	// 19 char filename
+	// makes sure there is a room for at least 1 null at the end
 	if len(f.File) >= 19 {
 		return nil, fmt.Errorf("ProgFD filename too long!")
 	}
@@ -38,6 +42,36 @@ func (f *ProgFD) Pack() ([]byte, error) {
 	copy(fd_buf[5:], []byte(f.File))
 
 	return fd_buf, nil
+}
+
+func (f *ProgFD) Open() (io.Closer, error) {
+	var pipe io.Closer
+	var err error
+
+	if f.Type == PROG_INPUT_FD || f.Type == MEM_FUZZ_FD {
+		pipe, err = os.OpenFile(f.File, os.O_WRONLY, os.ModeNamedPipe)
+	} else {
+		pipe, err = os.OpenFile(f.File, os.O_RDONLY, os.ModeNamedPipe)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	f.Pipe = pipe
+
+	return pipe, nil
+}
+
+func createPipe(path string, t fdtype) error {
+	err := syscall.Mkfifo(path, 0666)
+	if err != nil {
+		return err
+	}
+
+	// it will block on opening this pipe until the other end is open as well
+	// so don't open the pipe here
+	return nil
 }
 
 func GetStdPipes(pfds []ProgFD) (stdin io.WriteCloser, stdout io.ReadCloser, stderr io.ReadCloser) {

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define FILENAME "./data.dat"
 #define BUFSZ 0x100
@@ -28,7 +29,13 @@ int parse_file() {
 		return -1;
 	}
 
+	if (*(buf + (BUFSZ-1)) != 'U') {
+		return -1;
+	}
+
 	printf("Success!\n");
+	printf("You did it!\n");
+	return 0;
 }
 
 int main(int argc, char* argv[]) {
