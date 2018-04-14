@@ -14,14 +14,20 @@ int parse_file() {
 	
 	buf = (char*)malloc(BUFSZ);
 
-	read(0, buf, BUFSZ);
-
 	// start processing the file
 	if (*(buf + (BUFSZ/2)) != 'J') {
 		return -1;
 	}
 
 	if (*buf != 'Q') {
+		return -1;
+	}
+
+	if (*(buf+1) != 'D') {
+		return -1;
+	}
+
+	if (*(buf+2) != 'D') {
 		return -1;
 	}
 

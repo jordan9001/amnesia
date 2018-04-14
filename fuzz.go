@@ -151,13 +151,32 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 	buf := make([]byte, 4)
 
 	for loop {
+		retchan := make(chan *syscall.WaitStatus, 1)
+
+		go func() {
+			// open the pipes
+			log.Printf("Opening Pipes\n")
+			for i, _ := range ctx.FDs {
+				ctx.FDs[i].Open()
+			}
+			log.Printf("Pipes Open\n") //TODO remove printouts
+
+			// pfds are in the ctx
+
+			comm(ctx.FDs, FuzzChan{result, retchan, quit}, args) // start the fuzzer func
+		}()
+
 		log.Printf("GOGO\n")
 		_, err = stdin.Write([]byte{1})
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		// DEBUG
+		time.Sleep(time.Second * 600)
+
 		// get the response of the pid so we can kill the forked one if timeout from stdout
-		log.Printf("PID\n")
+		log.Printf("Waiting for PID read\n")
 		_, err = stdout.Read(buf)
 		if err != nil {
 			log.Fatal(err)
@@ -171,19 +190,6 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		// open the pipes
-		log.Printf("Opening Pipes\n")
-		for i, _ := range ctx.FDs {
-			ctx.FDs[i].Open()
-		}
-		log.Printf("Pipes Open\n") //TODO remove printouts
-
-		retchan := make(chan *syscall.WaitStatus, 1)
-
-		// pfds are in the ctx
-
-		go comm(ctx.FDs, FuzzChan{result, retchan, quit}, args) // start the fuzzer function
 
 		// do a timeout signal
 		if ctx.Timeout != 0 {

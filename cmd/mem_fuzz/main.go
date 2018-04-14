@@ -15,18 +15,12 @@ func prefuzz(comset []amnesia.ProgFD) {
 		log.Fatal("No Standard Pipes")
 	}
 
+	// TODO in a goroutine consume the welcome message
+
 	_, err := stdin.Write([]byte("AAAA"))
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	//welcome_msg := make([]byte, 1024)
-	//n, err := stdout.Read(welcome_msg)
-	//if err != nil {
-	//	log.Printf("Bad")
-	//	log.Fatal(err)
-	//}
-	//log.Printf("%s\n", string(welcome_msg[:n]))
 
 	log.Printf("Initialized program\n")
 }
@@ -44,11 +38,11 @@ func main() {
 	ctx.BufferSize = 1
 	ctx.Timeout = time.Second * 3
 	ctx.Path = "./target"
-	ctx.InfectionAddr = 0x0000000000400603
+	ctx.InfectionAddr = 0x00000000004005a9
 
-	ctx.Setup = prefuzz
+	//ctx.Setup = prefuzz
 
-	stdout := amnesia.ProgFD{0, amnesia.PROG_OUTPUT_FD, "", nil}
+	stdout := amnesia.ProgFD{1, amnesia.PROG_OUTPUT_FD, "", nil}
 	memfuz := amnesia.ProgFD{-1, amnesia.MEM_FUZZ_FD, "", nil}
 	ctx.FDs = []amnesia.ProgFD{stdout, memfuz}
 

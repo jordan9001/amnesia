@@ -155,9 +155,9 @@ PIPE_SET_LOOP:
 HANDLE_READER_FD:
 	; open (name, flags, mode)
 	lea rdi, [rbx + PIPE_NAME_OFF]
-	xor rsi, rsi
 	xor rdx, rdx
 	mov dl, BYTE[rbx + PIPE_TYPE_OFF]	; O_RDONLY = 0, O_WRONLY = 1
+	mov rsi, rdx				; flags
 	mov rax, 2	; sys_open
 	push rcx
 	syscall

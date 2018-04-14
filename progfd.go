@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"syscall"
 )
@@ -48,15 +49,21 @@ func (f *ProgFD) Open() (io.Closer, error) {
 	var pipe io.Closer
 	var err error
 
+	log.Printf("About to open pipe %s\n", f.File)
+
 	if f.Type == PROG_INPUT_FD || f.Type == MEM_FUZZ_FD {
+		log.Printf("Opening pipe %s write only\n", f.File)
 		pipe, err = os.OpenFile(f.File, os.O_WRONLY, os.ModeNamedPipe)
 	} else {
+		log.Printf("Opening pipe %s read only\n", f.File)
 		pipe, err = os.OpenFile(f.File, os.O_RDONLY, os.ModeNamedPipe)
 	}
+	log.Printf("Did to open pipe %s\n", f.File)
 
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("Did Well to open pipe %s\n", f.File)
 
 	f.Pipe = pipe
 
