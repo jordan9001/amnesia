@@ -158,11 +158,8 @@ func makePackBuf(ctx *Context, pack *os.File, orig_buf []byte, suffix string) (*
 		return ctx, nil, err
 	}
 
-	// the vars to be appended are the fd_pipe infos and then un-patch len then un-patch
-	pa_len := 0x18 * len(ctx.FDs) + 8 + len(orig_buf)
-	pack_app_buf := make([]byte, pa_len)
-
-	pack_buf := make([]byte, pack_info.Size(), pack_info.Size() + int64(len(pack_app_buf)))
+	pack_end_size := (0x18 * len(ctx.FDs)) + len(orig_buf) + 8
+	pack_buf := make([]byte, pack_info.Size(), pack_info.Size() + int64(pack_end_size))
 
 	_, err = pack.Read(pack_buf)
 	if err != nil {
@@ -172,16 +169,24 @@ func makePackBuf(ctx *Context, pack *os.File, orig_buf []byte, suffix string) (*
 	// write hook_pos
 	var v_hook_pos int64
 	// according to the disassember, the ret addr will point 0x49 bytes off from the patch start
-	v_hook_pos = -0x49
-	poff := len(pack_buf) - (8 * 3)
+	v_hook_pos = 0x41
+	poff := len(pack_buf) - (8 * 4)
 	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_hook_pos))
 
 	// write hook_off
 	var v_hook_off int64
 	// distance from VAR_START to the hook size field
-	v_hook_off = int64((0x18 * len(ctx.FDs)) + (3 * 8))
-	poff = len(pack_buf) - (8 * 2)
+	v_hook_off = int64((0x18 * len(ctx.FDs)) + (4 * 8)) // update this number if you add more vars
+	poff = len(pack_buf) - (8 * 3)
 	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_hook_off))
+
+	// write mprot_off
+	var v_pagesz_off int64
+	v_pagesz_off = int64(os.Getpagesize())
+	// turn it into a mask
+	v_pagesz_off = (-1 ^ (v_pagesz_off - 1))
+	poff = len(pack_buf) - (8 * 2)
+	binary.LittleEndian.PutUint64(pack_buf[poff:poff+8], uint64(v_pagesz_off))
 
 	// write num pipes
 	var v_num_pipes int64
@@ -225,7 +230,8 @@ func makePackBuf(ctx *Context, pack *os.File, orig_buf []byte, suffix string) (*
 	}
 
 	unpatch_buf := make([]byte, len(orig_buf) + 8)
-	binary.LittleEndian.PutUint64(unpatch_buf, uint64(len(nctx.FDs)))
+	fmt.Printf("Seeing orig_buf len as %d\n", len(orig_buf))
+	binary.LittleEndian.PutUint64(unpatch_buf, uint64(len(orig_buf)))
 	copy(unpatch_buf[8:], orig_buf)
 	// append unpatch len and unpatch
 	pack_buf = append(pack_buf, unpatch_buf...)

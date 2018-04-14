@@ -37,6 +37,7 @@ PONG:
 	xor rdx, rdx
 	mov dl, 5	; PROT_READ | PROT_EXEC
 	xor r10, r10
+	mov r10b, 2	; MAP_PRIVATE
 	xor r9, r9
 
 	syscall

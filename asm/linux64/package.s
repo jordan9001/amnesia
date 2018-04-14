@@ -21,6 +21,23 @@ PONG:
 	pop rax
 	
 	sub rax, [rcx + HOOK_POS]
+	; rax is the addr now
+
+	push rax
+
+	; mprotect rax=10 rdi=addr rsi=len rdx=prot
+	mov rdi, rax
+	and rdi, [rcx + PAGESZ_OFF]
+	xor rax, rax
+	mov al, 10
+	xor rsi, rsi
+	inc rsi
+	xor rdx, rdx
+	mov dl, 7	; read write execute
+	push rcx
+	syscall
+	pop rcx
+	pop rax
 
 	; first we have to unpatch the hook
 	mov r9, [rcx + HOOK_OFF]
@@ -30,8 +47,8 @@ PONG:
 	add r9, 8
 	
 REPATCH_LOOP:
-	mov cl, BYTE[r9]
-	mov BYTE[rax], cl
+	mov r8b, BYTE[r9]
+	mov BYTE[rax], r8b
 
 	inc rax
 	inc r9
@@ -39,6 +56,18 @@ REPATCH_LOOP:
 	dec rbx
 	test rbx, rbx
 	jne REPATCH_LOOP
+
+	; now restore the mem permissions
+	xor rax, rax
+	; rdi should already be correct
+	mov al, 10
+	xor rsi, rsi
+	inc rsi
+	xor rdx, rdx
+	mov dl, 5	; read execute
+	push rcx
+	syscall
+	pop rcx
 
 	; Ok, now we set up the fork server
 
@@ -61,11 +90,19 @@ FORK_LOOP:
 	
 	; fork off
 
-	mov rax, 56	; sys_clone
-	xor rdi, rdi	; no flags
-	mov rsi, rsp	; new stack pointer
-	xor rdx, rdx	; parent tid
-	xor r10, r10	; child tid
+	;mov rax, 56		; sys_clone
+	; flags are usually CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD
+	; but I don't need those. Maybe I need the tid clear set though?
+	;mov rdi, 18874368	; flags = CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID
+	;xor rsi, rsi		; use same stack, cloned
+	;xor rdx, rdx		; parent tid
+	;mov r10, QWORD[fs:0x10]
+	;lea r10, [r10+0x2d0]	; child tid ptr
+	;push rcx
+	;syscall
+	;pop rcx
+
+	mov rax, 57	; sys_fork (I gave up on clone)
 	push rcx
 	syscall
 	pop rcx
@@ -73,6 +110,12 @@ FORK_LOOP:
 	test rax, rax
 	js END_FORK_SERVER	; error
 	jz OUT_CHILD
+
+	;TODO DEBUG PAUSE SO WE CAN DEBUG CHILD
+	
+	mov rax, 34
+	syscall
+	jmp END_FORK_SERVER
 	
 	; tell the server the pid we just forked off on stdout
 	push rax
@@ -235,6 +278,10 @@ VAR_START:
 
 	; offset in var list to hook size and hook
 	HOOK_OFF equ $-VAR_START
+	dq 0
+
+	; offset in var list to page_size mask on
+	PAGESZ_OFF equ $-VAR_START
 	dq 0
 
 	; number of named pipe things

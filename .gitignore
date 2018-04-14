@@ -2,3 +2,5 @@
 *.bin.*
 .amn_*
 .gdb*
+*.swp
+amn_*
