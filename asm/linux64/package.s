@@ -23,7 +23,8 @@ PONG:
 	sub rax, [rcx + HOOK_POS]
 	; rax is the addr now
 
-	push rax
+	push rax ; save for when we restore
+	push rax ; save for just now
 
 	; mprotect rax=10 rdi=addr rsi=len rdx=prot
 	mov rdi, rax
@@ -90,18 +91,6 @@ FORK_LOOP:
 	
 	; fork off
 
-	;mov rax, 56		; sys_clone
-	; flags are usually CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD
-	; but I don't need those. Maybe I need the tid clear set though?
-	;mov rdi, 18874368	; flags = CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID
-	;xor rsi, rsi		; use same stack, cloned
-	;xor rdx, rdx		; parent tid
-	;mov r10, QWORD[fs:0x10]
-	;lea r10, [r10+0x2d0]	; child tid ptr
-	;push rcx
-	;syscall
-	;pop rcx
-
 	mov rax, 57	; sys_fork (I gave up on clone)
 	push rcx
 	syscall
@@ -111,25 +100,59 @@ FORK_LOOP:
 	js END_FORK_SERVER	; error
 	jz OUT_CHILD
 
-	;TODO DEBUG PAUSE SO WE CAN DEBUG CHILD
-	
-	mov rax, 34
-	syscall
-	jmp END_FORK_SERVER
-	
 	; tell the server the pid we just forked off on stdout
 	push rax
 	mov rsi, rsp	; buf
 	xor rax, rax
 	inc rax		; sys_write
-	xor rdi, rdi
-	inc rdi		; fd = 1 = stdout
+	mov rdi, rax 	; 1 = stdout
 	mov rdx, 4	; count
 	push rcx
 	syscall
 	pop rcx
 
 	pop rax
+
+	; the go server can't wait on our child
+	; haha, that analogy is so creepy in this context
+	; the hook was a brainwashing parasite
+	; it made the program bring us in
+	; then we start popping out copies of the original
+	; anyways, we have to wait here and tell the results to the golang server
+
+	; waitid
+	; rax = 247
+	; rdi : type = P_PID (1)
+	; rsi : pid
+	; rdx : ptr struct siginfo = rsp (size 0x80)
+	; r10 : options = null
+	; r8  : ptr struct rusage = null
+
+	mov rsi, rax
+	mov rdi, 1
+	sub rsp, 0x90
+	mov rdx, rsp
+	xor r10, r10
+	xor r8, r8
+	mov rax, 247
+	push rcx
+	syscall
+	pop rcx
+	
+	; some experiements on my comp said siginfo.si_status is 0x18 away from the base
+	; I think that is hella unportable, but it works for me for now
+
+	; write si_status out as a 4 byte int
+	mov rsi, [rsp + 0x18]
+	xor rax, rax
+	inc rax		; 1 = wrte
+	mov rdi, rax 	; 1 = stdout
+	mov rdx, 4	; count
+	push rcx
+	syscall
+	pop rcx
+
+	add rsp, 0x90	
 
 	jmp FORK_LOOP
 
@@ -212,15 +235,15 @@ HANDLE_MEM_FUZZ_FD:
 
 	pop rsi		; buf
 	pop rax		; type
+	pop rdx		; size
 	; if rax is 1, this is a esp offset
 	test rax, rax
 	jz MEM_HARD_ADDR
 	
 	; use rsi as rsp offset from where the hook was inserted
-	lea rsi, [rsi + rsp + 0x70] ; rsp offset is the 13 saved things, and the count
+	mov rsi, [rsi + rsp + 0x50] ; rsp offset is the 9 saved state things, and saved ret
 	
 MEM_HARD_ADDR:
-	pop rdx		; count
 	xor rax, rax	; sys_read
 	push rcx
 	syscall
@@ -254,6 +277,9 @@ END_FORK_SERVER:
 
 RESTORE:
 	; rax should be the addr to jump back to
+	pop rax
+
+	; restore messed state
 	pop r11
 	pop r10
 	pop r9

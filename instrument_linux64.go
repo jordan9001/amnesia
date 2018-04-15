@@ -230,7 +230,6 @@ func makePackBuf(ctx *Context, pack *os.File, orig_buf []byte, suffix string) (*
 	}
 
 	unpatch_buf := make([]byte, len(orig_buf) + 8)
-	fmt.Printf("Seeing orig_buf len as %d\n", len(orig_buf))
 	binary.LittleEndian.PutUint64(unpatch_buf, uint64(len(orig_buf)))
 	copy(unpatch_buf[8:], orig_buf)
 	// append unpatch len and unpatch
@@ -240,7 +239,6 @@ func makePackBuf(ctx *Context, pack *os.File, orig_buf []byte, suffix string) (*
 }
 
 func makeHookBuf(ctx *Context, hook *os.File, packageSize uint64, packagePath string) ([]byte, error) {
-	fmt.Printf("%d\n", packageSize)
 	// get size
 	hook_info, err := hook.Stat()
 	if err != nil {

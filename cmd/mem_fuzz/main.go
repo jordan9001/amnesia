@@ -2,33 +2,40 @@ package main
 
 import (
 	"github.com/jordan9001/amnesia"
+	"io"
 	"log"
-	"os"
 	"syscall"
 	"time"
 )
 
-func prefuzz(comset []amnesia.ProgFD) {
-	log.Printf("Sending initial communication with program before the fork server\n")
-	stdin, stdout, _ := amnesia.GetStdPipes(comset)
-	if stdin == nil || stdout == nil {
-		log.Fatal("No Standard Pipes")
-	}
+func memfuzz(comset []amnesia.ProgFD, fc amnesia.FuzzChan, args []string) {
+	log.Printf("Got to memfuzz!\n")
 
-	// TODO in a goroutine consume the welcome message
+	// send the membuffer message
+	answer := make([]byte, 0x100)
 
-	_, err := stdin.Write([]byte("AAAA"))
+	answer[0x80] = 'J'
+	answer[0] = 'Q'
+	answer[1] = 'D'
+	answer[2] = 'D'
+	answer[8] = 'P'
+	answer[255] = 'U'
+
+	var offset int64 = 8 // second item on the stack is a pointer to the buffer
+
+	amnesia.MemfuzzStackOff(comset[1], offset, answer);
+
+	// see what answer we get from that
+
+	response := make([]byte, 1024)
+
+	readpipe := comset[0].Pipe.(io.ReadCloser)
+	n, err := readpipe.Read(response)
 	if err != nil {
+		log.Printf("No fun!\n")
 		log.Fatal(err)
 	}
-
-	log.Printf("Initialized program\n")
-}
-
-func memfuzz(comset []amnesia.ProgFD, fc amnesia.FuzzChan, args []string) {
-
-	log.Printf("Got to memfuzz!\n")
-	os.Exit(0)
+	log.Printf("Got a response! : %q\n", string(response[:n]))
 }
 
 func main() {
@@ -38,9 +45,7 @@ func main() {
 	ctx.BufferSize = 1
 	ctx.Timeout = time.Second * 3
 	ctx.Path = "./target"
-	ctx.InfectionAddr = 0x00000000004005a9
-
-	//ctx.Setup = prefuzz
+	ctx.InfectionAddr = 0x00000000004005ad
 
 	stdout := amnesia.ProgFD{1, amnesia.PROG_OUTPUT_FD, "", nil}
 	memfuz := amnesia.ProgFD{-1, amnesia.MEM_FUZZ_FD, "", nil}

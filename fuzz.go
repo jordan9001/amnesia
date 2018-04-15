@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
+	"sync"
 	"time"
 )
 
@@ -137,6 +138,7 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 	}
 	log.Printf("Infection Running\n")
 
+
 	// initialize the program
 	if ctx.Setup != nil {
 		pfds := make([]ProgFD, 3)
@@ -149,21 +151,31 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 	}
 
 	buf := make([]byte, 4)
+	waitmut := &sync.Mutex{}
 
 	for loop {
 		retchan := make(chan *syscall.WaitStatus, 1)
 
+		waitmut.Lock()
 		go func() {
 			// open the pipes
 			log.Printf("Opening Pipes\n")
 			for i, _ := range ctx.FDs {
 				ctx.FDs[i].Open()
 			}
-			log.Printf("Pipes Open\n") //TODO remove printouts
-
 			// pfds are in the ctx
 
 			comm(ctx.FDs, FuzzChan{result, retchan, quit}, args) // start the fuzzer func
+
+			// gotta close the pipes again
+			for i, _ := range ctx.FDs {
+				ctx.FDs[i].Close()
+			}
+			log.Printf("Closed Pipes\n")
+			// let the thing know it can continue
+			// We should keep track of how many programs are there, cause if we go too fast here we die real quick :(
+			// ugh
+			waitmut.Unlock()
 		}()
 
 		log.Printf("GOGO\n")
@@ -171,9 +183,6 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		// DEBUG
-		time.Sleep(time.Second * 600)
 
 		// get the response of the pid so we can kill the forked one if timeout from stdout
 		log.Printf("Waiting for PID read\n")
@@ -199,30 +208,22 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 			}()
 		}
 
-		// TODO move linux specific code to a _linux file
-		var status *syscall.WaitStatus
-		status = nil
-
-		_, err = p.Wait()
+		// Go wont let us wait on the child of a child :(
+		// so now the assembly code waits for us, so we just do another read
+		log.Printf("Waiting for status read\n")
+		_, err = stdout.Read(buf)
 		if err != nil {
-			if exerr, ok := err.(*exec.ExitError); ok {
-				// here we get into platform dependent stuff
-				// Windows only has a WaitStatus with an ExitCode
-				// but that exit code says a lot about what happened
-				// Linux has a WaitStatus that implements stuff
-				st, ok := exerr.Sys().(syscall.WaitStatus)
-				if !ok {
-					log.Fatalf("Couldn't assert syscall.WaitStatus type\n")
-				}
-				status = &st
-			} else {
-				log.Fatalf("cmd.Wait : %v\n", err)
-			}
+			log.Fatal(err)
 		}
-		//  else program finished successfully, and we pass on a nil WaitStatus
+
+		var status syscall.WaitStatus
+		status = syscall.WaitStatus(binary.LittleEndian.Uint32(buf))
+		// This isn't working
+		// also my pipes fail if the program segfaults? Thats bad
+		// TODO
 
 		// by this time the CommFunc could have finished, so that is why retchan needs a buffer
-		retchan <- status
+		retchan <- &status
 
 		// check if we should stop
 		select {

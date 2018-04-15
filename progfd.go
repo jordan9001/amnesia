@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"syscall"
 )
@@ -49,25 +48,23 @@ func (f *ProgFD) Open() (io.Closer, error) {
 	var pipe io.Closer
 	var err error
 
-	log.Printf("About to open pipe %s\n", f.File)
-
 	if f.Type == PROG_INPUT_FD || f.Type == MEM_FUZZ_FD {
-		log.Printf("Opening pipe %s write only\n", f.File)
 		pipe, err = os.OpenFile(f.File, os.O_WRONLY, os.ModeNamedPipe)
 	} else {
-		log.Printf("Opening pipe %s read only\n", f.File)
 		pipe, err = os.OpenFile(f.File, os.O_RDONLY, os.ModeNamedPipe)
 	}
-	log.Printf("Did to open pipe %s\n", f.File)
 
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Did Well to open pipe %s\n", f.File)
 
 	f.Pipe = pipe
 
 	return pipe, nil
+}
+
+func (f *ProgFD) Close() error {
+	return f.Pipe.Close()
 }
 
 func createPipe(path string, t fdtype) error {
@@ -108,4 +105,57 @@ func GetStdPipes(pfds []ProgFD) (stdin io.WriteCloser, stdout io.ReadCloser, std
 	}
 
 	return stdin, stdout, stderr
+}
+
+func MemfuzzAbs(mfd ProgFD, addr uint64, buf []byte) error {
+	return memfuzz(mfd, addr, buf, false)
+}
+
+func MemfuzzStackOff(mfd ProgFD, offset int64, buf []byte) error {
+	return memfuzz(mfd, uint64(offset), buf, true)
+}
+
+func memfuzz(mfd ProgFD, addr uint64, buf []byte, is_stackoff bool) error {
+	// check this is a mem fuz fd
+	if mfd.Type != MEM_FUZZ_FD {
+		return fmt.Errorf("Non-Memfuzz fd passed to Memfuzz")
+	}
+
+	pipe, ok := mfd.Pipe.(io.WriteCloser)
+	if !ok {
+		return fmt.Errorf("Bad pipe")
+	}
+
+	// send a memory fuzz msg
+	// uint64 addr (or offset)
+	// uint64 type (0 = addr, 1 = rsp offset to addr)
+	// uint64 size
+
+	// char[] buf
+
+	header := make([]byte, 0x18) // header size
+	binary.LittleEndian.PutUint64(header, addr)
+
+	var msgtype uint64 = 0
+	if is_stackoff {
+		msgtype = 1
+	}
+	binary.LittleEndian.PutUint64(header[0x8:], msgtype)
+
+	binary.LittleEndian.PutUint64(header[0x10:], uint64(len(buf)))
+
+	// send header
+
+	_, err := pipe.Write(header)
+	if err != nil {
+		return err
+	}
+
+	// send buf
+	_, err = pipe.Write(buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
