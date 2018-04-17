@@ -152,6 +152,10 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 
 	buf := make([]byte, 4)
 	waitmut := &sync.Mutex{}
+	i := 0
+
+	// to attach gdb for debug
+	//time.Sleep(time.Second * 30)
 
 	for loop {
 		retchan := make(chan *syscall.WaitStatus, 1)
@@ -159,7 +163,6 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 		waitmut.Lock()
 		go func() {
 			// open the pipes
-			log.Printf("Opening Pipes\n")
 			for i, _ := range ctx.FDs {
 				ctx.FDs[i].Open()
 			}
@@ -171,32 +174,32 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 			for i, _ := range ctx.FDs {
 				ctx.FDs[i].Close()
 			}
-			log.Printf("Closed Pipes\n")
 			// let the thing know it can continue
 			// We should keep track of how many programs are there, cause if we go too fast here we die real quick :(
 			// ugh
+			log.Printf("%d\n", i)
+			i++
 			waitmut.Unlock()
 		}()
 
-		log.Printf("GOGO\n")
 		_, err = stdin.Write([]byte{1})
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		// get the response of the pid so we can kill the forked one if timeout from stdout
-		log.Printf("Waiting for PID read\n")
 		_, err = stdout.Read(buf)
 		if err != nil {
+			log.Printf("Unable to read PID\n");
 			log.Fatal(err)
 		}
 
 		var pid int32
 		pid = int32(binary.LittleEndian.Uint32(buf))
-		log.Printf("PID = %d\n", pid)
 
 		p, err := os.FindProcess(int(pid))
 		if err != nil {
+			log.Printf("Unable to find the process!\n")
 			log.Fatal(err)
 		}
 
@@ -210,9 +213,9 @@ func fuzzInfectedWorker(ctx *Context, args []string, comm CommFunc, result chan 
 
 		// Go wont let us wait on the child of a child :(
 		// so now the assembly code waits for us, so we just do another read
-		log.Printf("Waiting for status read\n")
 		_, err = stdout.Read(buf)
 		if err != nil {
+			log.Printf("Unable to read the status!\n")
 			log.Fatal(err)
 		}
 

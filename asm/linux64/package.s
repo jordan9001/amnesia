@@ -125,14 +125,14 @@ FORK_LOOP:
 	; rdi : type = P_PID (1)
 	; rsi : pid
 	; rdx : ptr struct siginfo = rsp (size 0x80)
-	; r10 : options = null
+	; r10 : options = 4 = WEXITED
 	; r8  : ptr struct rusage = null
 
 	mov rsi, rax
 	mov rdi, 1
 	sub rsp, 0x90
 	mov rdx, rsp
-	xor r10, r10
+	mov r10, 6	; WEXITED | WSTOPPED
 	xor r8, r8
 	mov rax, 247
 	push rcx
@@ -143,7 +143,7 @@ FORK_LOOP:
 	; I think that is hella unportable, but it works for me for now
 
 	; write si_status out as a 4 byte int
-	mov rsi, [rsp + 0x18]
+	lea rsi, [rsp + 0x18]
 	xor rax, rax
 	inc rax		; 1 = wrte
 	mov rdi, rax 	; 1 = stdout

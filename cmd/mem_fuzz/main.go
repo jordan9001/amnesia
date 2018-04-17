@@ -4,22 +4,29 @@ import (
 	"github.com/jordan9001/amnesia"
 	"io"
 	"log"
+	"strings"
 	"syscall"
 	"time"
+	"math/rand"
 )
 
+var letters []byte = []byte("JQDPU")
+
 func memfuzz(comset []amnesia.ProgFD, fc amnesia.FuzzChan, args []string) {
-	log.Printf("Got to memfuzz!\n")
 
 	// send the membuffer message
 	answer := make([]byte, 0x100)
 
-	answer[0x80] = 'J'
-	answer[0] = 'Q'
-	answer[1] = 'D'
-	answer[2] = 'D'
-	answer[8] = 'P'
-	answer[255] = 'U'
+	//answer[0x80] = 'J'
+	//answer[0] = 'Q'
+	//answer[1] = 'D'
+	//answer[2] = 'D'
+	//answer[8] = 'P'
+	//answer[255] = 'U'
+
+	for i := 0; i < 0x100; i++ {
+		answer[i] = letters[rand.Intn(len(letters))]
+	}
 
 	var offset int64 = 8 // second item on the stack is a pointer to the buffer
 
@@ -35,13 +42,17 @@ func memfuzz(comset []amnesia.ProgFD, fc amnesia.FuzzChan, args []string) {
 		log.Printf("No fun!\n")
 		log.Fatal(err)
 	}
-	log.Printf("Got a response! : %q\n", string(response[:n]))
+	if strings.Contains(string(response[:n]), "Success") {
+		log.Printf("Got a response! : %q\n", string(response[:n]))
+		log.Printf("Input was %q\n", string(answer))
+		log.Fatal("Done!")
+	}
 }
 
 func main() {
 	var ctx *amnesia.Context = &amnesia.Context{}
 
-	ctx.WorkerCount = 1
+	ctx.WorkerCount = 3
 	ctx.BufferSize = 1
 	ctx.Timeout = time.Second * 3
 	ctx.Path = "./target"

@@ -50,8 +50,6 @@ int main(int argc, char* argv[]) {
 	if (parse_file()) {
 		printf("parse error!\n");
 	}
-	// lets do a segfault
-	//printf("%s\n", (char*)NULL);
 	printf("Done!\n");
 	return 0;
 }
